@@ -137,3 +137,15 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Piper TTS voice models and configs
+voices/
+!voices/.gitkeep
+*.onnx
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+
+# macOS files
+.DS_Store
