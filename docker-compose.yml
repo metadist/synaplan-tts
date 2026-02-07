@@ -1,12 +1,88 @@
+# Synaplan TTS
+#
+# Multi-language text-to-speech service powered by Piper.
+# Provides an HTTP API for speech synthesis.
+#
+# ── Environments ──────────────────────────────────────────────
+#   Local dev  : docker compose up -d          (binds 127.0.0.1)
+#   GPU server : copy .env.example → .env, set TTS_BIND_ADDRESS
+#
+# First run downloads ~250 MB of voice models (en, de, es, tr, ru).
+# Subsequent starts skip the download.
+#
+# Test:
+#   curl http://${TTS_BIND_ADDRESS:-127.0.0.1}:10200/health
+#   curl "http://${TTS_BIND_ADDRESS:-127.0.0.1}:10200/api/tts?text=Hello&language=en" -o test.wav
+#
+
 services:
+  # ── Voice Model Downloader (runs once) ──────────────────────
+  voice-download:
+    image: alpine:3.20
+    container_name: synaplan-tts-voices
+    volumes:
+      - ./voices:/voices
+    command: >
+      sh -c '
+        apk add --no-cache curl ca-certificates > /dev/null 2>&1
+
+        BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main"
+
+        download() {
+          VOICE_KEY="$$1"
+          HF_PATH="$$2"
+          ONNX="/voices/$${VOICE_KEY}.onnx"
+          JSON="/voices/$${VOICE_KEY}.onnx.json"
+
+          if [ -f "$$ONNX" ] && [ -f "$$JSON" ]; then
+            echo "✓ $$VOICE_KEY (already downloaded)"
+            return 0
+          fi
+
+          echo "↓ Downloading $$VOICE_KEY ..."
+          curl -fL --retry 3 --retry-delay 5 --max-time 600 \
+            -o "$$ONNX" "$${BASE}/$${HF_PATH}/$${VOICE_KEY}.onnx" && \
+          curl -fL --retry 3 --retry-delay 5 --max-time 120 \
+            -o "$$JSON" "$${BASE}/$${HF_PATH}/$${VOICE_KEY}.onnx.json" && \
+          echo "✓ $$VOICE_KEY downloaded" || {
+            echo "✗ FAILED: $$VOICE_KEY"
+            rm -f "$$ONNX" "$$JSON"
+            return 1
+          }
+        }
+
+        echo "══════════════════════════════════════════"
+        echo "  Synaplan TTS — Voice Model Download"
+        echo "══════════════════════════════════════════"
+        echo ""
+
+        download "en_US-lessac-medium"   "en/en_US/lessac/medium"
+        download "de_DE-thorsten-medium" "de/de_DE/thorsten/medium"
+        download "es_ES-davefx-medium"   "es/es_ES/davefx/medium"
+        download "tr_TR-dfki-medium"     "tr/tr_TR/dfki/medium"
+        download "ru_RU-irina-medium"    "ru/ru_RU/irina/medium"
+        download "fa_IR-reza_ibrahim-medium" "fa/fa_IR/reza_ibrahim/medium"
+
+        echo ""
+        echo "Voice download complete."
+        ls -lh /voices/*.onnx 2>/dev/null || echo "No .onnx files found!"
+      '
+    restart: "no"
+
+  # ── TTS HTTP API Server ─────────────────────────────────────
   piper:
-    image: rhasspy/wyoming-piper
+    build: .
     container_name: synaplan-piper-tts
     restart: unless-stopped
     ports:
-      - "127.0.0.1:10200:10200"
+      - "${TTS_BIND_ADDRESS:-127.0.0.1}:10200:10200"
     volumes:
-      - ./voices:/data
-    # Note: Update --voice parameter to match the voice model you downloaded
-    # Example: --voice en_US-lessac-medium
-    command: --voice en_US-lessac-medium
+      - ./voices:/voices:ro
+    environment:
+      VOICES_DIR: /voices
+      DEFAULT_VOICE: en_US-lessac-medium
+      MAX_TEXT_LENGTH: "5000"
+      SYNTH_WORKERS: "4"
+    depends_on:
+      voice-download:
+        condition: service_completed_successfully

@@ -1,6 +1,0 @@
-# Voice models directory
-# Place your Piper voice model files here:
-# - *.onnx (model file)
-# - *.onnx.json (config file)
-#
-# Download from: https://huggingface.co/rhasspy/piper-voices/
