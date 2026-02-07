@@ -57,7 +57,7 @@ The service is configured to:
 
 ### Voice Models
 
-Voice models are kept out of git to keep the repository size small. Download the models you need from the [Piper releases page](https://github.com/rhasspy/piper/releases).
+Voice models are kept out of git to keep the repository size small. Download the models you need from the [Piper voices repository](https://huggingface.co/rhasspy/piper-voices/tree/main).
 
 ### Usage
 
