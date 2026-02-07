@@ -42,6 +42,11 @@ synaplan-tts/
 
 3. Start the service:
    ```bash
+   docker compose up -d
+   ```
+   
+   Or if using older Docker versions:
+   ```bash
    docker-compose up -d
    ```
 

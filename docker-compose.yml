@@ -7,4 +7,6 @@ services:
       - "127.0.0.1:10200:10200"
     volumes:
       - ./voices:/data
+    # Note: Update --voice parameter to match the voice model you downloaded
+    # Example: --voice en_US-lessac-medium
     command: --voice en_US-lessac-medium
