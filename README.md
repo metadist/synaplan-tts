@@ -1,6 +1,10 @@
 # synaplan-tts
 
-Running your own Text-To-Speech service on a GPU server with Piper. This repo is in use with our own platform to provide speech generation services for customers.
+Running your own Text-To-Speech service on a GPU server with Piper. This repo is in use with our own platform to provide speech generation services for customers on
+
+https://web.synaplan.com/
+
+Take a look at our core repository.
 
 ## Setup
 
@@ -42,11 +46,6 @@ synaplan-tts/
 
 3. Start the service:
    ```bash
-   docker compose up -d
-   ```
-   
-   Or if using older Docker versions:
-   ```bash
    docker-compose up -d
    ```
 
@@ -62,7 +61,7 @@ The service is configured to:
 
 ### Voice Models
 
-Voice models are kept out of git to keep the repository size small. Download the models you need from the [Piper voices repository](https://huggingface.co/rhasspy/piper-voices/tree/main).
+Voice models are kept out of git to keep the repository size small. Download the models you need from the [Piper releases page](https://github.com/rhasspy/piper/releases).
 
 ### Usage
 
