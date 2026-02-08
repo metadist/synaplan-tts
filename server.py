@@ -17,11 +17,14 @@ import json
 import logging
 import os
 import wave
+import threading
+import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Response
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -225,6 +228,102 @@ def _synthesize_wav(
     return buf.getvalue()
 
 
+async def _stream_opus(
+    voice: object,
+    text: str,
+    voice_key: str,
+    speaker_id: Optional[int] = None,
+    length_scale: Optional[float] = None,
+    noise_scale: Optional[float] = None,
+    noise_w_scale: Optional[float] = None,
+    volume: float = 1.0,
+):
+    """Generate Opus/WebM audio stream via ffmpeg.
+
+    Uses PiperVoice.synthesize() which yields AudioChunk objects per sentence.
+    Each chunk's audio_int16_bytes is piped through ffmpeg for Opus encoding.
+    """
+    from piper.config import SynthesisConfig  # type: ignore[import-untyped]
+
+    syn_config = SynthesisConfig(
+        speaker_id=speaker_id,
+        length_scale=length_scale,
+        noise_scale=noise_scale,
+        noise_w_scale=noise_w_scale,
+        volume=volume,
+    )
+
+    # Get sample rate from voice metadata
+    sample_rate = voice_meta.get(voice_key, {}).get("sample_rate", 22050)
+
+    # Start ffmpeg process
+    # Input: 16-bit little-endian PCM at voice's sample rate, mono
+    # Output: Opus in WebM container
+    ffmpeg_proc = await asyncio.create_subprocess_exec(
+        "ffmpeg", "-f", "s16le", "-ar", str(sample_rate), "-ac", "1", "-i", "-",
+        "-c:a", "libopus", "-b:a", "64k", "-f", "webm", "-",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_running_loop()
+
+    def synth_thread():
+        """Run synthesis in a separate thread and push PCM chunks to queue."""
+        try:
+            for audio_chunk in voice.synthesize(text, syn_config=syn_config):  # type: ignore
+                pcm_bytes = audio_chunk.audio_int16_bytes
+                if pcm_bytes:
+                    loop.call_soon_threadsafe(queue.put_nowait, pcm_bytes)
+            loop.call_soon_threadsafe(queue.put_nowait, None)  # Sentinel
+        except Exception as e:
+            logger.error("Synthesis error: %s", e)
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    # Start synthesis thread
+    threading.Thread(target=synth_thread, daemon=True).start()
+
+    async def feed_ffmpeg():
+        """Pull PCM chunks from queue and write to ffmpeg stdin."""
+        try:
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                if ffmpeg_proc.stdin:
+                    ffmpeg_proc.stdin.write(chunk)
+                    await ffmpeg_proc.stdin.drain()
+            if ffmpeg_proc.stdin:
+                ffmpeg_proc.stdin.close()
+        except Exception as e:
+            logger.error("Feed ffmpeg error: %s", e)
+
+    # Start feeding ffmpeg in background
+    feed_task = asyncio.create_task(feed_ffmpeg())
+
+    # Yield output from ffmpeg stdout
+    chunk_size = 4096
+    try:
+        while True:
+            if ffmpeg_proc.stdout:
+                data = await ffmpeg_proc.stdout.read(chunk_size)
+                if not data:
+                    break
+                yield data
+            else:
+                break
+    finally:
+        await feed_task
+        if ffmpeg_proc.returncode is None:
+            try:
+                ffmpeg_proc.terminate()
+            except ProcessLookupError:
+                pass
+        await ffmpeg_proc.wait()
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -262,12 +361,29 @@ class TTSRequest(BaseModel):
     noise_scale: Optional[float] = Field(None, description="Phoneme noise")
     noise_w_scale: Optional[float] = Field(None, description="Phoneme width noise")
     volume: float = Field(1.0, ge=0.0, le=5.0, description="Output volume multiplier")
+    stream: bool = Field(False, description="Stream audio as Opus/WebM instead of returning WAV")
 
 
 @app.post("/api/tts")
 async def tts_post(req: TTSRequest):
-    """Synthesize speech from JSON body — returns WAV audio."""
+    """Synthesize speech from JSON body — returns WAV audio or Opus stream."""
     voice_key, voice_obj = _resolve_voice(req.voice, req.language)
+
+    if req.stream:
+        return StreamingResponse(
+            _stream_opus(
+                voice_obj,
+                req.text,
+                voice_key,
+                req.speaker_id,
+                req.length_scale,
+                req.noise_scale,
+                req.noise_w_scale,
+                req.volume,
+            ),
+            media_type="audio/webm",
+            headers={"X-Voice": voice_key},
+        )
 
     loop = asyncio.get_event_loop()
     audio = await loop.run_in_executor(
@@ -299,13 +415,30 @@ async def tts_get(
     language: Optional[str] = Query(None, description="Language code (de, en, es, tr, ru)"),
     length_scale: Optional[float] = Query(None, description="Speed factor"),
     volume: float = Query(1.0, ge=0.0, le=5.0),
+    stream: bool = Query(False, description="Stream audio as Opus/WebM"),
 ):
-    """Synthesize speech from query parameters — returns WAV audio.
+    """Synthesize speech from query parameters — returns WAV audio or Opus stream.
 
     Handy for quick browser testing:
-        http://localhost:10200/api/tts?text=Hallo+Welt&language=de
+        http://localhost:10200/api/tts?text=Hallo+Welt&language=de&stream=true
     """
     voice_key, voice_obj = _resolve_voice(voice, language)
+
+    if stream:
+        return StreamingResponse(
+            _stream_opus(
+                voice_obj,
+                text,
+                voice_key,
+                None,           # speaker_id
+                length_scale,
+                None,           # noise_scale
+                None,           # noise_w_scale
+                volume,
+            ),
+            media_type="audio/webm",
+            headers={"X-Voice": voice_key},
+        )
 
     loop = asyncio.get_event_loop()
     audio = await loop.run_in_executor(

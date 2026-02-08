@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TTS Streaming Test</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+        textarea { width: 100%; height: 100px; margin: 1rem 0; padding: 0.5rem; }
+        button { padding: 0.5rem 1rem; cursor: pointer; }
+        #status { margin-top: 1rem; color: #666; }
+    </style>
+</head>
+<body>
+    <h1>TTS Streaming Test (Opus/WebM)</h1>
+    
+    <div>
+        <label>Text:</label>
+        <textarea id="textInput">This is a test of the streaming text to speech system. It should start playing almost immediately, without waiting for the entire audio to be generated.</textarea>
+    </div>
+    
+    <div>
+        <label>Voice:</label>
+        <select id="voiceSelect">
+            <option value="">Default</option>
+            <!-- Populated via JS -->
+        </select>
+    </div>
+    
+    <div style="margin-top: 1rem;">
+        <button id="playBtn">Stream & Play</button>
+    </div>
+
+    <div id="status">Ready</div>
+    
+    <audio id="audioPlayer" controls style="margin-top: 1rem; width: 100%;"></audio>
+
+    <script>
+        const API_URL = 'http://localhost:10200'; // Adjust if needed
+        const statusEl = document.getElementById('status');
+        const playBtn = document.getElementById('playBtn');
+        const textInput = document.getElementById('textInput');
+        const voiceSelect = document.getElementById('voiceSelect');
+        const audioPlayer = document.getElementById('audioPlayer');
+
+        // Load voices
+        fetch(`${API_URL}/api/voices`)
+            .then(res => res.json())
+            .then(voices => {
+                voices.forEach(v => {
+                    const opt = document.createElement('option');
+                    opt.value = v.key;
+                    opt.textContent = `${v.language_name} - ${v.key}`;
+                    voiceSelect.appendChild(opt);
+                });
+            })
+            .catch(err => console.error('Failed to load voices', err));
+
+        playBtn.addEventListener('click', async () => {
+            const text = textInput.value;
+            const voice = voiceSelect.value;
+            
+            if (!text) return;
+
+            statusEl.textContent = 'Requesting stream...';
+            playBtn.disabled = true;
+
+            try {
+                // Method 1: Direct Audio Element (if browser supports streaming WebM via src)
+                // audioPlayer.src = `${API_URL}/api/tts?text=${encodeURIComponent(text)}&voice=${voice}&stream=true`;
+                // audioPlayer.play();
+                
+                // Method 2: Media Source Extensions (MSE) for more control
+                const mediaSource = new MediaSource();
+                audioPlayer.src = URL.createObjectURL(mediaSource);
+                
+                mediaSource.addEventListener('sourceopen', async () => {
+                    const sourceBuffer = mediaSource.addSourceBuffer('audio/webm; codecs="opus"');
+                    
+                    const response = await fetch(`${API_URL}/api/tts?text=${encodeURIComponent(text)}&voice=${voice}&stream=true`);
+                    const reader = response.body.getReader();
+                    
+                    statusEl.textContent = 'Streaming...';
+                    
+                    const appendChunk = async () => {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            mediaSource.endOfStream();
+                            statusEl.textContent = 'Stream complete';
+                            playBtn.disabled = false;
+                            return;
+                        }
+                        
+                        if (sourceBuffer.updating) {
+                            // Wait for updateend event
+                            await new Promise(resolve => sourceBuffer.addEventListener('updateend', resolve, { once: true }));
+                        }
+                        
+                        sourceBuffer.appendBuffer(value);
+                        
+                        // Start playing as soon as we have data
+                        if (audioPlayer.paused) {
+                            audioPlayer.play().catch(e => console.log('Auto-play prevented', e));
+                        }
+                        
+                        appendChunk();
+                    };
+                    
+                    appendChunk();
+                });
+
+            } catch (err) {
+                console.error(err);
+                statusEl.textContent = 'Error: ' + err.message;
+                playBtn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
