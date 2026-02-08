@@ -5,7 +5,7 @@ LABEL description="Synaplan TTS - Piper-based multi-language text-to-speech HTTP
 
 # Install minimal system dependencies
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends curl ffmpeg && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
