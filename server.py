@@ -231,13 +231,18 @@ def _synthesize_wav(
 async def _stream_opus(
     voice: object,
     text: str,
+    voice_key: str,
     speaker_id: Optional[int] = None,
     length_scale: Optional[float] = None,
     noise_scale: Optional[float] = None,
     noise_w_scale: Optional[float] = None,
     volume: float = 1.0,
 ):
-    """Generate Opus/WebM audio stream via ffmpeg."""
+    """Generate Opus/WebM audio stream via ffmpeg.
+
+    Uses PiperVoice.synthesize() which yields AudioChunk objects per sentence.
+    Each chunk's audio_int16_bytes is piped through ffmpeg for Opus encoding.
+    """
     from piper.config import SynthesisConfig  # type: ignore[import-untyped]
 
     syn_config = SynthesisConfig(
@@ -248,29 +253,33 @@ async def _stream_opus(
         volume=volume,
     )
 
+    # Get sample rate from voice metadata
+    sample_rate = voice_meta.get(voice_key, {}).get("sample_rate", 22050)
+
     # Start ffmpeg process
-    # Input: 16-bit little-endian PCM, 22050Hz, mono
+    # Input: 16-bit little-endian PCM at voice's sample rate, mono
     # Output: Opus in WebM container
     ffmpeg_proc = await asyncio.create_subprocess_exec(
-        "ffmpeg", "-f", "s16le", "-ar", "22050", "-ac", "1", "-i", "-",
+        "ffmpeg", "-f", "s16le", "-ar", str(sample_rate), "-ac", "1", "-i", "-",
         "-c:a", "libopus", "-b:a", "64k", "-f", "webm", "-",
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.DEVNULL
+        stderr=asyncio.subprocess.DEVNULL,
     )
 
-    queue = asyncio.Queue()
+    queue: asyncio.Queue = asyncio.Queue()
     loop = asyncio.get_running_loop()
 
     def synth_thread():
         """Run synthesis in a separate thread and push PCM chunks to queue."""
         try:
-            # synthesize_stream_raw yields bytes
-            for chunk in voice.synthesize_stream_raw(text, syn_config=syn_config): # type: ignore
-                loop.call_soon_threadsafe(queue.put_nowait, chunk)
-            loop.call_soon_threadsafe(queue.put_nowait, None) # Sentinel
+            for audio_chunk in voice.synthesize(text, syn_config=syn_config):  # type: ignore
+                pcm_bytes = audio_chunk.audio_int16_bytes
+                if pcm_bytes:
+                    loop.call_soon_threadsafe(queue.put_nowait, pcm_bytes)
+            loop.call_soon_threadsafe(queue.put_nowait, None)  # Sentinel
         except Exception as e:
-            logger.error(f"Synthesis error: {e}")
+            logger.error("Synthesis error: %s", e)
             loop.call_soon_threadsafe(queue.put_nowait, None)
 
     # Start synthesis thread
@@ -289,7 +298,7 @@ async def _stream_opus(
             if ffmpeg_proc.stdin:
                 ffmpeg_proc.stdin.close()
         except Exception as e:
-            logger.error(f"Feed ffmpeg error: {e}")
+            logger.error("Feed ffmpeg error: %s", e)
 
     # Start feeding ffmpeg in background
     feed_task = asyncio.create_task(feed_ffmpeg())
@@ -365,6 +374,7 @@ async def tts_post(req: TTSRequest):
             _stream_opus(
                 voice_obj,
                 req.text,
+                voice_key,
                 req.speaker_id,
                 req.length_scale,
                 req.noise_scale,
@@ -419,6 +429,7 @@ async def tts_get(
             _stream_opus(
                 voice_obj,
                 text,
+                voice_key,
                 None,           # speaker_id
                 length_scale,
                 None,           # noise_scale
