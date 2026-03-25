@@ -18,7 +18,7 @@
 services:
   # ── Voice Model Downloader (runs once) ──────────────────────
   voice-download:
-    image: alpine:3.20
+    image: alpine:3.23
     container_name: synaplan-tts-voices
     volumes:
       - ./voices:/voices
