@@ -1,4 +1,4 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 LABEL maintainer="Synaplan"
 LABEL description="Synaplan TTS - Piper-based multi-language text-to-speech HTTP API"
