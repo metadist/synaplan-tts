@@ -1,24 +1,29 @@
 # Synaplan TTS
 
-> Part of the [Synaplan](https://web.synaplan.com) AI knowledge management platform.
+> **Optional companion** to [Synaplan](https://github.com/metadist/synaplan) — only needed for voice output.
+> Synaplan runs fully without it.
+>
+> **Docs**: [docs.synaplan.com](https://docs.synaplan.com/) &nbsp;|&nbsp; **Main app**: [github.com/metadist/synaplan](https://github.com/metadist/synaplan)
 
-Self-hosted multi-language text-to-speech service powered by [Piper](https://github.com/rhasspy/piper). Provides an HTTP REST API for the [Synaplan platform](https://web.synaplan.com) to generate speech audio.
+Self-hosted multi-language text-to-speech service powered by [Piper](https://github.com/rhasspy/piper). Exposes a small HTTP API that Synaplan calls to synthesize speech.
 
-**Supported languages:** English, German, Spanish, Turkish, Russian, Persian
+**Languages:** English, German, Spanish, Turkish, Russian, Persian
 
 ## Quick Start
 
 ```bash
+git clone https://github.com/metadist/synaplan-tts.git
+cd synaplan-tts
 docker compose up -d
 ```
 
-First run downloads voice models (~350 MB total). Subsequent starts skip the download.
-
-Verify the service is running:
+First run downloads voice models (~350 MB). Verify:
 
 ```bash
 curl http://127.0.0.1:10200/health
 ```
+
+Synaplan auto-detects this service via `SYNAPLAN_TTS_URL` (default: `http://host.docker.internal:10200`). No further config needed when running both stacks on the same host.
 
 Test speech synthesis:
 
@@ -134,16 +139,6 @@ chmod +x download-voices.sh
 ./download-voices.sh en de      # only English + German
 ```
 
-## Integration with Synaplan
-
-This service is designed to work with the [Synaplan platform](https://web.synaplan.com). The TTS service runs on `127.0.0.1:10200`. From the Synaplan backend Docker container, reach it via:
-
-```
-http://host.docker.internal:10200
-```
-
-The Synaplan backend already has `host.docker.internal` configured.
-
 ## Configuration
 
 All settings via environment variables in `docker-compose.yml`:
@@ -215,6 +210,12 @@ synaplan-tts/
 5. Lock down access:
    - Bind to LAN IP only (never `0.0.0.0`)
    - Firewall: allow only Synaplan nodes to port `10200/tcp`
+
+## Related
+
+- [Main app — synaplan](https://github.com/metadist/synaplan)
+- [Public docs — docs.synaplan.com](https://docs.synaplan.com/)
+- [Plugin overview](https://docs.synaplan.com/index.php/plugins)
 
 ## License
 
