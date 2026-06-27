@@ -51,20 +51,48 @@ services:
           }
         }
 
+        # Demo-critical voices. The product demo needs en, de, es and tr,
+        # so a fresh install MUST end up with all four. If any cannot be
+        # fetched we abort with a non-zero exit so the dependent piper
+        # service does NOT start half-configured (silent "No voices loaded").
+        require() {
+          download "$$1" "$$2" || {
+            echo "✗ REQUIRED demo voice $$1 could not be downloaded — aborting."
+            exit 1
+          }
+        }
+
         echo "══════════════════════════════════════════"
         echo "  Synaplan TTS — Voice Model Download"
         echo "══════════════════════════════════════════"
         echo ""
 
-        download "en_US-lessac-medium"   "en/en_US/lessac/medium"
-        download "de_DE-thorsten-medium" "de/de_DE/thorsten/medium"
-        download "es_ES-davefx-medium"   "es/es_ES/davefx/medium"
-        download "tr_TR-dfki-medium"     "tr/tr_TR/dfki/medium"
-        download "ru_RU-irina-medium"    "ru/ru_RU/irina/medium"
-        download "fa_IR-reza_ibrahim-medium" "fa/fa_IR/reza_ibrahim/medium"
+        echo "Required demo voices (en, de, es, tr):"
+        require "en_US-lessac-medium"   "en/en_US/lessac/medium"
+        require "de_DE-thorsten-medium" "de/de_DE/thorsten/medium"
+        require "es_ES-davefx-medium"   "es/es_ES/davefx/medium"
+        require "tr_TR-dfki-medium"     "tr/tr_TR/dfki/medium"
 
         echo ""
-        echo "Voice download complete."
+        echo "Optional voices (best effort, non-fatal):"
+        download "ru_RU-irina-medium"        "ru/ru_RU/irina/medium" || true
+        download "fa_IR-reza_ibrahim-medium" "fa/fa_IR/reza_ibrahim/medium" || true
+
+        echo ""
+        echo "Verifying required demo voices ..."
+        MISSING=""
+        for V in en_US-lessac-medium de_DE-thorsten-medium es_ES-davefx-medium tr_TR-dfki-medium; do
+          if [ ! -f "/voices/$$V.onnx" ] || [ ! -f "/voices/$$V.onnx.json" ]; then
+            MISSING="$$MISSING $$V"
+          fi
+        done
+        if [ -n "$$MISSING" ]; then
+          echo "✗ Missing required demo voices:$$MISSING"
+          exit 1
+        fi
+
+        echo ""
+        echo "Voice download complete — required demo voices present."
         ls -lh /voices/*.onnx 2>/dev/null || echo "No .onnx files found!"
       '
     restart: "no"

@@ -2,7 +2,9 @@
 # ───────────────────────────────────────────────────────────────
 # download-voices.sh — Download Piper TTS voice models
 #
-# Downloads voice models for: English, German, Spanish, Turkish, Russian
+# Downloads voice models for: English, German, Spanish, Turkish, Russian, Persian
+# The demo-required set (English, German, Spanish, Turkish) is what the product
+# demo needs; the Docker `voice-download` job treats those four as mandatory.
 # Each voice needs an .onnx model file + .onnx.json config file.
 #
 # Usage:

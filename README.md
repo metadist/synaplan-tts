@@ -118,16 +118,24 @@ http://localhost:10200/api/tts?text=Guten+Tag&language=de&length_scale=0.9
 
 ## Voice Models
 
-| Language | Voice Key | Speaker | Quality |
-|----------|-----------|---------|---------|
-| 🇺🇸 English | `en_US-lessac-medium` | lessac | medium |
-| 🇩🇪 German | `de_DE-thorsten-medium` | thorsten | medium |
-| 🇪🇸 Spanish | `es_ES-davefx-medium` | davefx | medium |
-| 🇹🇷 Turkish | `tr_TR-dfki-medium` | dfki | medium |
-| 🇷🇺 Russian | `ru_RU-irina-medium` | irina | medium |
-| 🇮🇷 Persian | `fa_IR-reza_ibrahim-medium` | reza_ibrahim | medium |
+| Language | Voice Key | Speaker | Quality | Demo-required |
+|----------|-----------|---------|---------|:-------------:|
+| 🇺🇸 English | `en_US-lessac-medium` | lessac | medium | ✅ |
+| 🇩🇪 German | `de_DE-thorsten-medium` | thorsten | medium | ✅ |
+| 🇪🇸 Spanish | `es_ES-davefx-medium` | davefx | medium | ✅ |
+| 🇹🇷 Turkish | `tr_TR-dfki-medium` | dfki | medium | ✅ |
+| 🇷🇺 Russian | `ru_RU-irina-medium` | irina | medium | – |
+| 🇮🇷 Persian | `fa_IR-reza_ibrahim-medium` | reza_ibrahim | medium | – |
 
-Models are downloaded automatically on first `docker compose up`. To add more voices, download `.onnx` + `.onnx.json` files from [Piper Voices](https://huggingface.co/rhasspy/piper-voices/tree/main) into `voices/`.
+Models are downloaded automatically on first `docker compose up`. The four
+**demo-required** voices (English, German, Spanish, Turkish) are mandatory: if
+any of them cannot be downloaded, the `voice-download` job exits non-zero and the
+`piper` server is held back (via `depends_on: service_completed_successfully`)
+rather than starting with no voices loaded. Russian and Persian are best-effort
+and never block startup.
+
+To add more voices, download `.onnx` + `.onnx.json` files from
+[Piper Voices](https://huggingface.co/rhasspy/piper-voices/tree/main) into `voices/`.
 
 ### Manual Voice Download
 
