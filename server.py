@@ -38,6 +38,9 @@ logger = logging.getLogger("synaplan-tts")
 # Configuration
 # ---------------------------------------------------------------------------
 VOICES_DIR = Path(os.getenv("VOICES_DIR", "/voices"))
+# Optional second directory for operator-added voices. Scanned after VOICES_DIR
+# so a file with the same key here replaces the baked-in model.
+EXTRA_VOICES_DIR = Path(os.getenv("EXTRA_VOICES_DIR", "/voices-extra"))
 DEFAULT_VOICE = os.getenv("DEFAULT_VOICE", "en_US-lessac-medium")
 MAX_TEXT_LENGTH = int(os.getenv("MAX_TEXT_LENGTH", "5000"))
 
@@ -87,15 +90,14 @@ def _parse_voice_key(key: str) -> dict:
     }
 
 
-def load_voices() -> None:
-    """Scan VOICES_DIR for .onnx models and load them via piper-tts."""
+def _load_voices_from(directory: Path) -> None:
+    """Load every Piper .onnx + .onnx.json pair from *directory*."""
     from piper import PiperVoice  # type: ignore[import-untyped]
 
-    if not VOICES_DIR.exists():
-        logger.warning("Voices directory does not exist: %s", VOICES_DIR)
+    if not directory.exists():
         return
 
-    for onnx_path in sorted(VOICES_DIR.glob("*.onnx")):
+    for onnx_path in sorted(directory.glob("*.onnx")):
         # Skip .onnx.json companion files (glob shouldn't match, but guard anyway)
         if onnx_path.suffixes == [".onnx", ".json"]:
             continue
@@ -111,7 +113,6 @@ def load_voices() -> None:
             voices[voice_key] = voice
             voice_meta[voice_key] = _parse_voice_key(voice_key)
 
-            # Read sample rate from config
             try:
                 with open(config_path) as f:
                     cfg = json.load(f)
@@ -122,12 +123,22 @@ def load_voices() -> None:
                 voice_meta[voice_key]["sample_rate"] = 22050
 
             logger.info(
-                "Loaded voice: %s (%s)",
+                "Loaded voice: %s (%s) from %s",
                 voice_key,
                 voice_meta[voice_key]["language_name"],
+                directory,
             )
         except Exception:
             logger.exception("Failed to load voice %s", voice_key)
+
+
+def load_voices() -> None:
+    """Scan baked-in VOICES_DIR, then EXTRA_VOICES_DIR (extras win on name clash)."""
+    if not VOICES_DIR.exists():
+        logger.warning("Voices directory does not exist: %s", VOICES_DIR)
+    _load_voices_from(VOICES_DIR)
+    if EXTRA_VOICES_DIR.exists():
+        _load_voices_from(EXTRA_VOICES_DIR)
 
 
 # ---------------------------------------------------------------------------
@@ -135,8 +146,11 @@ def load_voices() -> None:
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Synaplan TTS",
-    description="Multi-language text-to-speech API powered by Piper",
-    version="1.0.0",
+    description=(
+        "Multi-language text-to-speech API powered by Piper. "
+        "The image ships four voices (en, de, es, tr); add more via EXTRA_VOICES_DIR."
+    ),
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -154,7 +168,9 @@ async def _startup() -> None:
         logger.info("Ready — %d voice(s): %s", len(voices), ", ".join(voices.keys()))
     else:
         logger.warning(
-            "No voices loaded! Place .onnx + .onnx.json files in %s", VOICES_DIR
+            "No voices loaded! Baked voices missing from %s; extra voices go in %s",
+            VOICES_DIR,
+            EXTRA_VOICES_DIR,
         )
 
 
