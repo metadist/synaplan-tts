@@ -1,16 +1,26 @@
 #!/usr/bin/env bash
 # ───────────────────────────────────────────────────────────────
-# download-voices.sh — Download Piper TTS voice models
+# download-voices.sh — Download extra Piper TTS voice models
 #
-# Downloads voice models for: English, German, Spanish, Turkish, Russian, Persian
-# The demo-required set (English, German, Spanish, Turkish) is what the product
-# demo needs; the Docker `voice-download` job treats those four as mandatory.
-# Each voice needs an .onnx model file + .onnx.json config file.
+# The published Docker image already ships four voices:
+#   en  en_US-lessac-medium
+#   de  de_DE-thorsten-medium
+#   es  es_ES-davefx-medium
+#   tr  tr_TR-dfki-medium
+# Re-running this script for those languages is a no-op when the files exist.
+#
+# Extra voices (Russian, Persian, or any Piper model) go in ./voices/ which
+# the container mounts as EXTRA_VOICES_DIR. Each voice needs an .onnx model
+# plus a matching .onnx.json config.
 #
 # Usage:
-#   ./download-voices.sh              # download all voices
-#   ./download-voices.sh en de        # download only English + German
-#   VOICES_DIR=/my/path ./download-voices.sh   # custom output directory
+#   ./download-voices.sh              # bundled + extra catalog entries
+#   ./download-voices.sh ru fa        # only Russian + Persian
+#   VOICES_DIR=/my/path ./download-voices.sh
+#
+# Any other Piper voice: download the pair from
+#   https://huggingface.co/rhasspy/piper-voices/tree/main
+# into ./voices/ and restart the container. No rebuild required.
 # ───────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -19,6 +29,7 @@ BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
 # ── Voice definitions ─────────────────────────────────────────
 # Format: LANG_CODE|VOICE_KEY|HF_PATH
+# First four are the bundled set; the rest are extras you opt into.
 VOICE_DEFS=(
   "en|en_US-lessac-medium|en/en_US/lessac/medium"
   "de|de_DE-thorsten-medium|de/de_DE/thorsten/medium"
@@ -34,7 +45,7 @@ if [[ $# -gt 0 ]]; then
   FILTER_LANGS=("$@")
   echo "Downloading voices for: ${FILTER_LANGS[*]}"
 else
-  echo "Downloading all voices"
+  echo "Downloading catalog voices (bundled four are skipped if already present)"
 fi
 
 mkdir -p "$VOICES_DIR"
@@ -60,7 +71,6 @@ FAILED=0
 for def in "${VOICE_DEFS[@]}"; do
   IFS='|' read -r lang voice_key hf_path <<< "$def"
 
-  # Apply language filter
   if [[ ${#FILTER_LANGS[@]} -gt 0 ]]; then
     match=false
     for fl in "${FILTER_LANGS[@]}"; do
@@ -90,7 +100,6 @@ for def in "${VOICE_DEFS[@]}"; do
   else
     echo "  ✗ FAILED to download $voice_key"
     FAILED=$((FAILED + 1))
-    # Clean up partial downloads
     rm -f "$onnx_dest" "$json_dest"
   fi
 done
@@ -103,6 +112,9 @@ echo "  Skipped:    $SKIPPED (already present)"
 echo "  Failed:     $FAILED"
 echo "  Directory:  $VOICES_DIR"
 echo "════════════════════════════════════════════"
+echo ""
+echo "Restart the container to load new voices:"
+echo "  docker compose restart piper"
 
 if [[ $FAILED -gt 0 ]]; then
   echo ""

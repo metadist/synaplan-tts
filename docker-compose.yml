@@ -1,116 +1,33 @@
 # Synaplan TTS
 #
-# Multi-language text-to-speech service powered by Piper.
-# Provides an HTTP API for speech synthesis.
+# Piper HTTP API. The published image already contains four voices
+# (English, German, Spanish, Turkish) — first start needs no download.
 #
-# ── Environments ──────────────────────────────────────────────
 #   Local dev  : docker compose up -d          (binds 127.0.0.1)
 #   GPU server : copy .env.example → .env, set TTS_BIND_ADDRESS
-#
-# First run downloads ~250 MB of voice models (en, de, es, tr, ru).
-# Subsequent starts skip the download.
+#   Extra voices: drop .onnx + .onnx.json into ./voices/ (see README)
 #
 # Test:
 #   curl http://${TTS_BIND_ADDRESS:-127.0.0.1}:10200/health
 #   curl "http://${TTS_BIND_ADDRESS:-127.0.0.1}:10200/api/tts?text=Hello&language=en" -o test.wav
 #
+# Image: ghcr.io/metadist/synaplan-tts:latest
+# Source: https://github.com/metadist/synaplan-tts
 
 services:
-  # ── Voice Model Downloader (runs once) ──────────────────────
-  voice-download:
-    image: alpine:3.24
-    container_name: synaplan-tts-voices
-    volumes:
-      - ./voices:/voices
-    command: >
-      sh -c '
-        apk add --no-cache curl ca-certificates > /dev/null 2>&1
-
-        BASE="https://huggingface.co/rhasspy/piper-voices/resolve/main"
-
-        download() {
-          VOICE_KEY="$$1"
-          HF_PATH="$$2"
-          ONNX="/voices/$${VOICE_KEY}.onnx"
-          JSON="/voices/$${VOICE_KEY}.onnx.json"
-
-          if [ -f "$$ONNX" ] && [ -f "$$JSON" ]; then
-            echo "✓ $$VOICE_KEY (already downloaded)"
-            return 0
-          fi
-
-          echo "↓ Downloading $$VOICE_KEY ..."
-          curl -fL --retry 3 --retry-delay 5 --max-time 600 \
-            -o "$$ONNX" "$${BASE}/$${HF_PATH}/$${VOICE_KEY}.onnx" && \
-          curl -fL --retry 3 --retry-delay 5 --max-time 120 \
-            -o "$$JSON" "$${BASE}/$${HF_PATH}/$${VOICE_KEY}.onnx.json" && \
-          echo "✓ $$VOICE_KEY downloaded" || {
-            echo "✗ FAILED: $$VOICE_KEY"
-            rm -f "$$ONNX" "$$JSON"
-            return 1
-          }
-        }
-
-        # Demo-critical voices. The product demo needs en, de, es and tr,
-        # so a fresh install MUST end up with all four. If any cannot be
-        # fetched we abort with a non-zero exit so the dependent piper
-        # service does NOT start half-configured (silent "No voices loaded").
-        require() {
-          download "$$1" "$$2" || {
-            echo "✗ REQUIRED demo voice $$1 could not be downloaded — aborting."
-            exit 1
-          }
-        }
-
-        echo "══════════════════════════════════════════"
-        echo "  Synaplan TTS — Voice Model Download"
-        echo "══════════════════════════════════════════"
-        echo ""
-
-        echo "Required demo voices (en, de, es, tr):"
-        require "en_US-lessac-medium"   "en/en_US/lessac/medium"
-        require "de_DE-thorsten-medium" "de/de_DE/thorsten/medium"
-        require "es_ES-davefx-medium"   "es/es_ES/davefx/medium"
-        require "tr_TR-dfki-medium"     "tr/tr_TR/dfki/medium"
-
-        echo ""
-        echo "Optional voices (best effort, non-fatal):"
-        download "ru_RU-irina-medium"        "ru/ru_RU/irina/medium" || true
-        download "fa_IR-reza_ibrahim-medium" "fa/fa_IR/reza_ibrahim/medium" || true
-
-        echo ""
-        echo "Verifying required demo voices ..."
-        MISSING=""
-        for V in en_US-lessac-medium de_DE-thorsten-medium es_ES-davefx-medium tr_TR-dfki-medium; do
-          if [ ! -f "/voices/$$V.onnx" ] || [ ! -f "/voices/$$V.onnx.json" ]; then
-            MISSING="$$MISSING $$V"
-          fi
-        done
-        if [ -n "$$MISSING" ]; then
-          echo "✗ Missing required demo voices:$$MISSING"
-          exit 1
-        fi
-
-        echo ""
-        echo "Voice download complete — required demo voices present."
-        ls -lh /voices/*.onnx 2>/dev/null || echo "No .onnx files found!"
-      '
-    restart: "no"
-
-  # ── TTS HTTP API Server ─────────────────────────────────────
   piper:
+    image: ghcr.io/metadist/synaplan-tts:latest
     build: .
     container_name: synaplan-piper-tts
     restart: unless-stopped
     ports:
       - "${TTS_BIND_ADDRESS:-127.0.0.1}:10200:10200"
     volumes:
-      - ./voices:/voices:ro
+      # Host extras only — do not mount over /voices (that hides the baked set).
+      - ./voices:/voices-extra:ro
     environment:
       VOICES_DIR: /voices
+      EXTRA_VOICES_DIR: /voices-extra
       DEFAULT_VOICE: en_US-lessac-medium
       MAX_TEXT_LENGTH: "5000"
       SYNTH_WORKERS: "4"
-    depends_on:
-      voice-download:
-        condition: service_completed_successfully

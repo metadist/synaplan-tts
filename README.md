@@ -3,13 +3,33 @@
 > **Optional companion** to [Synaplan](https://github.com/metadist/synaplan) — only needed for voice output.
 > Synaplan runs fully without it.
 >
-> **Docs**: [docs.synaplan.com](https://docs.synaplan.com/) &nbsp;|&nbsp; **Main app**: [github.com/metadist/synaplan](https://github.com/metadist/synaplan)
+> **Image**: [`ghcr.io/metadist/synaplan-tts`](https://github.com/metadist/synaplan-tts/pkgs/container/synaplan-tts) &nbsp;|&nbsp; **Docs**: [docs.synaplan.com/tts](https://docs.synaplan.com/index.php/tts) &nbsp;|&nbsp; **Main app**: [github.com/metadist/synaplan](https://github.com/metadist/synaplan)
 
 Self-hosted multi-language text-to-speech service powered by [Piper](https://github.com/rhasspy/piper). Exposes a small HTTP API that Synaplan calls to synthesize speech.
 
-**Languages:** English, German, Spanish, Turkish, Russian, Persian
+The published image **ships four voices** (English, German, Spanish, Turkish). No first-run download, no HuggingFace dependency at startup. Drop extra `.onnx` models into `./voices/` if you need more languages.
+
+## Why a separate service?
+
+TTS is optional, CPU-heavy, and language-pack heavy. Keeping it in its own image means:
+
+- The main Synaplan stack stays small — people who only want chat and RAG never pull ~250 MB of voice models.
+- You can run Piper on a different machine (a GPU box, a LAN appliance) and point several Synaplan nodes at it.
+- Voice models update independently of the PHP/Vue app.
+- Speech **input** (Whisper) already lives in the main image; speech **output** stays a choice.
+
+Synaplan auto-enables the speaker button when this service answers on `SYNAPLAN_TTS_URL`.
 
 ## Quick Start
+
+**With Synaplan** (same compose file, opt-in profile):
+
+```bash
+cd synaplan
+docker compose --profile tts up -d
+```
+
+**Standalone** (this repo, or any host that should only speak):
 
 ```bash
 git clone https://github.com/metadist/synaplan-tts.git
@@ -17,35 +37,57 @@ cd synaplan-tts
 docker compose up -d
 ```
 
-First run downloads voice models (~350 MB). Verify:
+Or run the published image without cloning:
+
+```bash
+docker run -d --name synaplan-tts -p 127.0.0.1:10200:10200 ghcr.io/metadist/synaplan-tts:latest
+```
+
+Verify:
 
 ```bash
 curl http://127.0.0.1:10200/health
 ```
 
-Synaplan auto-detects this service via `SYNAPLAN_TTS_URL` (default: `http://host.docker.internal:10200`). No further config needed when running both stacks on the same host.
+You should see `"voices_loaded": 4` and the four keys below. Synaplan reaches the service via `SYNAPLAN_TTS_URL` (compose default: `http://host.docker.internal:10200`).
 
 Test speech synthesis:
 
 ```bash
-# English
 curl "http://127.0.0.1:10200/api/tts?text=Hello+world&language=en" -o test_en.wav
-
-# German
 curl "http://127.0.0.1:10200/api/tts?text=Hallo+Welt&language=de" -o test_de.wav
-
-# Spanish
 curl "http://127.0.0.1:10200/api/tts?text=Hola+mundo&language=es" -o test_es.wav
-
-# Turkish
 curl "http://127.0.0.1:10200/api/tts?text=Merhaba+dünya&language=tr" -o test_tr.wav
-
-# Russian
-curl "http://127.0.0.1:10200/api/tts?text=Привет+мир&language=ru" -o test_ru.wav
-
-# Persian
-curl "http://127.0.0.1:10200/api/tts?text=سلام+دنیا&language=fa" -o test_fa.wav
 ```
+
+## Bundled voices
+
+These four are **inside the image**. They match Synaplan's UI locales (`en`, `de`, `es`, `tr`): the frontend language / detected reply language selects the voice automatically.
+
+| Language | Voice key | Speaker | Quality |
+|----------|-----------|---------|---------|
+| English (US) | `en_US-lessac-medium` | lessac | medium |
+| German | `de_DE-thorsten-medium` | thorsten | medium |
+| Spanish | `es_ES-davefx-medium` | davefx | medium |
+| Turkish | `tr_TR-dfki-medium` | dfki | medium |
+
+How Synaplan picks a voice: the chat UI sends its locale; if the backend detects another reply language, that wins. Piper then maps `en` / `de` / `es` / `tr` to the row above. An explicit `voice=` query still overrides everything.
+
+## Adding more voices
+
+1. Pick a model on [Piper Voices](https://huggingface.co/rhasspy/piper-voices/tree/main). You need **both** files: `<voice>.onnx` and `<voice>.onnx.json`.
+2. Drop them into `./voices/` next to this compose file (the container mounts that folder as `/voices-extra`).
+3. Restart: `docker compose restart piper`.
+4. `GET /api/voices` lists every loaded model. Call TTS with `voice=<key>` or `language=<xx>`.
+
+Helper for the catalog extras (Russian, Persian) or to re-fetch a bundled voice onto the host:
+
+```bash
+./download-voices.sh            # catalog (skips files that already exist)
+./download-voices.sh ru fa      # only those languages
+```
+
+Do **not** mount `./voices` over `/voices` — that hides the four baked models.
 
 ## API Reference
 
@@ -56,8 +98,8 @@ Health check — returns loaded voice count and available voices.
 ```json
 {
   "status": "ok",
-  "voices_loaded": 6,
-  "available_voices": ["en_US-lessac-medium", "de_DE-thorsten-medium", ...],
+  "voices_loaded": 4,
+  "available_voices": ["de_DE-thorsten-medium", "en_US-lessac-medium", "es_ES-davefx-medium", "tr_TR-dfki-medium"],
   "default_voice": "en_US-lessac-medium"
 }
 ```
@@ -99,7 +141,7 @@ Synthesize speech. Returns `audio/wav`.
 |-------|------|----------|-------------|
 | `text` | string | ✅ | Text to synthesize (max 5000 chars) |
 | `voice` | string | – | Exact voice key (overrides language) |
-| `language` | string | – | Language shortcode: `en`, `de`, `es`, `tr`, `ru`, `fa` |
+| `language` | string | – | Language shortcode: `en`, `de`, `es`, `tr`, plus any extra you added |
 | `length_scale` | float | – | Speed factor — <1.0 faster, >1.0 slower |
 | `volume` | float | – | Output volume multiplier (default 1.0) |
 | `speaker_id` | int | – | Speaker index for multi-speaker models |
@@ -116,37 +158,6 @@ Same as POST but with query parameters. Convenient for browser testing:
 http://localhost:10200/api/tts?text=Guten+Tag&language=de&length_scale=0.9
 ```
 
-## Voice Models
-
-| Language | Voice Key | Speaker | Quality | Demo-required |
-|----------|-----------|---------|---------|:-------------:|
-| 🇺🇸 English | `en_US-lessac-medium` | lessac | medium | ✅ |
-| 🇩🇪 German | `de_DE-thorsten-medium` | thorsten | medium | ✅ |
-| 🇪🇸 Spanish | `es_ES-davefx-medium` | davefx | medium | ✅ |
-| 🇹🇷 Turkish | `tr_TR-dfki-medium` | dfki | medium | ✅ |
-| 🇷🇺 Russian | `ru_RU-irina-medium` | irina | medium | – |
-| 🇮🇷 Persian | `fa_IR-reza_ibrahim-medium` | reza_ibrahim | medium | – |
-
-Models are downloaded automatically on first `docker compose up`. The four
-**demo-required** voices (English, German, Spanish, Turkish) are mandatory: if
-any of them cannot be downloaded, the `voice-download` job exits non-zero and the
-`piper` server is held back (via `depends_on: service_completed_successfully`)
-rather than starting with no voices loaded. Russian and Persian are best-effort
-and never block startup.
-
-To add more voices, download `.onnx` + `.onnx.json` files from
-[Piper Voices](https://huggingface.co/rhasspy/piper-voices/tree/main) into `voices/`.
-
-### Manual Voice Download
-
-If you prefer to download voices manually (e.g. on a server without Docker):
-
-```bash
-chmod +x download-voices.sh
-./download-voices.sh            # all languages
-./download-voices.sh en de      # only English + German
-```
-
 ## Configuration
 
 All settings via environment variables in `docker-compose.yml`:
@@ -154,7 +165,8 @@ All settings via environment variables in `docker-compose.yml`:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TTS_BIND_ADDRESS` | `127.0.0.1` | IP to bind the service to (set in `.env`) |
-| `VOICES_DIR` | `/voices` | Path to voice model directory |
+| `VOICES_DIR` | `/voices` | Baked-in voice directory (do not overwrite) |
+| `EXTRA_VOICES_DIR` | `/voices-extra` | Host-mounted extras (`./voices`) |
 | `DEFAULT_VOICE` | `en_US-lessac-medium` | Fallback voice when none specified |
 | `MAX_TEXT_LENGTH` | `5000` | Maximum characters per request |
 | `SYNTH_WORKERS` | `4` | Thread pool size for synthesis |
@@ -175,16 +187,12 @@ Copy `.env.example` to `.env` on the server and set `TTS_BIND_ADDRESS` to your L
 ```
 synaplan-tts/
 ├── docker-compose.yml    # Service configuration
-├── Dockerfile            # TTS server image build
+├── Dockerfile            # Bakes 4 voices + TTS server
 ├── server.py             # FastAPI HTTP API
 ├── requirements.txt      # Python dependencies
-├── download-voices.sh    # Manual voice download script
+├── download-voices.sh    # Optional extra-voice helper
 ├── .env.example          # Environment template for deployment
-├── voices/               # Voice models (gitignored)
-│   ├── en_US-lessac-medium.onnx
-│   ├── en_US-lessac-medium.onnx.json
-│   ├── de_DE-thorsten-medium.onnx
-│   └── ...
+├── voices/               # Extra voices only (gitignored)
 ├── data/                 # Runtime data
 ├── LICENSE
 └── README.md
@@ -192,14 +200,14 @@ synaplan-tts/
 
 ## GPU Server Deployment
 
-1. Push code to your server (voices are gitignored):
+1. Pull the image (voices are already inside):
    ```bash
-   rsync -av --exclude voices synaplan-tts/ user@gpu:/opt/synaplan-tts/
+   docker pull ghcr.io/metadist/synaplan-tts:latest
    ```
 
-2. On the GPU server, copy voice models:
+2. Optional: copy extra voice models:
    ```bash
-   scp -r voices/ user@gpu:/opt/synaplan-tts/voices/
+   scp -r extra-voices/ user@gpu:/opt/synaplan-tts/voices/
    ```
 
 3. Configure the bind address:
@@ -222,7 +230,7 @@ synaplan-tts/
 ## Related
 
 - [Main app — synaplan](https://github.com/metadist/synaplan)
-- [Public docs — docs.synaplan.com](https://docs.synaplan.com/)
+- [Public docs — docs.synaplan.com/tts](https://docs.synaplan.com/index.php/tts)
 - [Plugin overview](https://docs.synaplan.com/index.php/plugins)
 
 ## License

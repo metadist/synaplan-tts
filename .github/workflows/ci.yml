@@ -49,8 +49,24 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          # Load locally so the voice-count smoke test can inspect the image
+          # on pull requests (push is skipped for PRs).
+          load: ${{ github.event_name == 'pull_request' }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Image ships at least four baked voices
+        if: github.event_name == 'pull_request'
+        run: |
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | awk 'NF{print; exit}')
+          test -n "$IMAGE"
+          COUNT=$(docker run --rm --entrypoint sh "$IMAGE" -c 'ls /voices/*.onnx 2>/dev/null | wc -l')
+          echo "Baked .onnx count: $COUNT"
+          docker run --rm --entrypoint sh "$IMAGE" -c \
+            'for v in en_US-lessac-medium de_DE-thorsten-medium es_ES-davefx-medium tr_TR-dfki-medium; do
+               test -s /voices/$v.onnx && test -s /voices/$v.onnx.json
+             done'
+          test "$COUNT" -ge 4
