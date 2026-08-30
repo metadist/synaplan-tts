@@ -1,6 +1,6 @@
-# ── Stage 1: bake the four product voices into the image ──────────────
-# English, German, Spanish, Turkish. Extra languages are mounted at
-# runtime via EXTRA_VOICES_DIR (see README).
+# ── Stage 1: bake the five product voices into the image ──────────────
+# English, German, Spanish, French, Turkish. Extra languages are mounted
+# at runtime via EXTRA_VOICES_DIR (see README).
 FROM alpine:3.24 AS voices
 
 RUN apk add --no-cache curl ca-certificates
@@ -20,10 +20,11 @@ RUN set -eu; \
         -o "${voice}.onnx.json" "${HF_BASE}/${path}/${voice}.onnx.json"; \
     }; \
     download en_US-lessac-medium   en/en_US/lessac/medium; \
-    download de_DE-thorsten-medium de/de_DE/thorsten/medium; \
+    download de_DE-kerstin-low     de/de_DE/kerstin/low; \
     download es_ES-davefx-medium   es/es_ES/davefx/medium; \
+    download fr_FR-siwis-medium    fr/fr_FR/siwis/medium; \
     download tr_TR-dfki-medium     tr/tr_TR/dfki/medium; \
-    for v in en_US-lessac-medium de_DE-thorsten-medium es_ES-davefx-medium tr_TR-dfki-medium; do \
+    for v in en_US-lessac-medium de_DE-kerstin-low es_ES-davefx-medium fr_FR-siwis-medium tr_TR-dfki-medium; do \
       test -s "${v}.onnx" && test -s "${v}.onnx.json"; \
     done; \
     echo "Baked voices:"; ls -lh *.onnx
@@ -32,7 +33,7 @@ RUN set -eu; \
 FROM python:3.14-slim-bookworm
 
 LABEL maintainer="Synaplan"
-LABEL description="Synaplan TTS — Piper-based multi-language text-to-speech HTTP API (4 baked voices: en, de, es, tr)"
+LABEL description="Synaplan TTS — Piper-based multi-language text-to-speech HTTP API (5 baked voices: en, de, es, fr, tr)"
 LABEL org.opencontainers.image.source="https://github.com/metadist/synaplan-tts"
 
 RUN apt-get update && \

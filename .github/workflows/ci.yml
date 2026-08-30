@@ -58,7 +58,7 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Image ships at least four baked voices
+      - name: Image ships at least five baked voices
         if: github.event_name == 'pull_request'
         run: |
           IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | awk 'NF{print; exit}')
@@ -66,7 +66,7 @@ jobs:
           COUNT=$(docker run --rm --entrypoint sh "$IMAGE" -c 'ls /voices/*.onnx 2>/dev/null | wc -l')
           echo "Baked .onnx count: $COUNT"
           docker run --rm --entrypoint sh "$IMAGE" -c \
-            'for v in en_US-lessac-medium de_DE-thorsten-medium es_ES-davefx-medium tr_TR-dfki-medium; do
+            'for v in en_US-lessac-medium de_DE-kerstin-low es_ES-davefx-medium fr_FR-siwis-medium tr_TR-dfki-medium; do
                test -s /voices/$v.onnx && test -s /voices/$v.onnx.json
              done'
-          test "$COUNT" -ge 4
+          test "$COUNT" -ge 5
