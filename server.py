@@ -148,9 +148,9 @@ app = FastAPI(
     title="Synaplan TTS",
     description=(
         "Multi-language text-to-speech API powered by Piper. "
-        "The image ships four voices (en, de, es, tr); add more via EXTRA_VOICES_DIR."
+        "The image ships five voices (en, de, es, fr, tr); add more via EXTRA_VOICES_DIR."
     ),
-    version="1.1.0",
+    version="1.2.0",
 )
 
 app.add_middleware(
@@ -365,10 +365,10 @@ class TTSRequest(BaseModel):
 
     text: str = Field(..., min_length=1, max_length=MAX_TEXT_LENGTH)
     voice: Optional[str] = Field(
-        None, description="Exact voice key, e.g. 'de_DE-thorsten-medium'"
+        None, description="Exact voice key, e.g. 'de_DE-kerstin-low'"
     )
     language: Optional[str] = Field(
-        None, description="Language shortcode: de, en, es, tr, ru"
+        None, description="Language shortcode: de, en, es, fr, tr, ru"
     )
     speaker_id: Optional[int] = Field(None, description="Multi-speaker voice index")
     length_scale: Optional[float] = Field(
@@ -428,7 +428,7 @@ async def tts_post(req: TTSRequest):
 async def tts_get(
     text: str = Query(..., min_length=1, max_length=MAX_TEXT_LENGTH),
     voice: Optional[str] = Query(None, description="Voice key"),
-    language: Optional[str] = Query(None, description="Language code (de, en, es, tr, ru)"),
+    language: Optional[str] = Query(None, description="Language code (de, en, es, fr, tr, ru)"),
     length_scale: Optional[float] = Query(None, description="Speed factor"),
     volume: float = Query(1.0, ge=0.0, le=5.0),
     stream: bool = Query(False, description="Stream audio as Opus/WebM"),

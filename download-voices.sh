@@ -2,14 +2,16 @@
 # ───────────────────────────────────────────────────────────────
 # download-voices.sh — Download extra Piper TTS voice models
 #
-# The published Docker image already ships four voices:
+# The published Docker image already ships five voices:
 #   en  en_US-lessac-medium
-#   de  de_DE-thorsten-medium
+#   de  de_DE-kerstin-low
 #   es  es_ES-davefx-medium
+#   fr  fr_FR-siwis-medium
 #   tr  tr_TR-dfki-medium
 # Re-running this script for those languages is a no-op when the files exist.
 #
-# Extra voices (Russian, Persian, or any Piper model) go in ./voices/ which
+# Extra voices (the male German Thorsten, Russian, Persian, or any Piper model)
+# go in ./voices/ which
 # the container mounts as EXTRA_VOICES_DIR. Each voice needs an .onnx model
 # plus a matching .onnx.json config.
 #
@@ -29,14 +31,17 @@ BASE_URL="https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
 # ── Voice definitions ─────────────────────────────────────────
 # Format: LANG_CODE|VOICE_KEY|HF_PATH
-# First four are the bundled set; the rest are extras you opt into.
+# First five are the bundled set; the rest are extras you opt into.
 VOICE_DEFS=(
   "en|en_US-lessac-medium|en/en_US/lessac/medium"
-  "de|de_DE-thorsten-medium|de/de_DE/thorsten/medium"
+  "de|de_DE-kerstin-low|de/de_DE/kerstin/low"
   "es|es_ES-davefx-medium|es/es_ES/davefx/medium"
+  "fr|fr_FR-siwis-medium|fr/fr_FR/siwis/medium"
   "tr|tr_TR-dfki-medium|tr/tr_TR/dfki/medium"
   "ru|ru_RU-irina-medium|ru/ru_RU/irina/medium"
   "fa|fa_IR-reza_ibrahim-medium|fa/fa_IR/reza_ibrahim/medium"
+  # Male German, medium quality — the former bundled voice, opt in with "de-male"
+  "de-male|de_DE-thorsten-medium|de/de_DE/thorsten/medium"
 )
 
 # ── Parse optional language filter ────────────────────────────
@@ -45,7 +50,7 @@ if [[ $# -gt 0 ]]; then
   FILTER_LANGS=("$@")
   echo "Downloading voices for: ${FILTER_LANGS[*]}"
 else
-  echo "Downloading catalog voices (bundled four are skipped if already present)"
+  echo "Downloading catalog voices (bundled five are skipped if already present)"
 fi
 
 mkdir -p "$VOICES_DIR"

@@ -7,7 +7,7 @@
 
 Self-hosted multi-language text-to-speech service powered by [Piper](https://github.com/rhasspy/piper). Exposes a small HTTP API that Synaplan calls to synthesize speech.
 
-The published image **ships four voices** (English, German, Spanish, Turkish). No first-run download, no HuggingFace dependency at startup. Drop extra `.onnx` models into `./voices/` if you need more languages.
+The published image **ships five voices** (English, German, Spanish, French, Turkish). No first-run download, no HuggingFace dependency at startup. Drop extra `.onnx` models into `./voices/` if you need more languages.
 
 ## Why a separate service?
 
@@ -49,7 +49,7 @@ Verify:
 curl http://127.0.0.1:10200/health
 ```
 
-You should see `"voices_loaded": 4` and the four keys below. Synaplan reaches the service via `SYNAPLAN_TTS_URL` (compose default: `http://host.docker.internal:10200`).
+You should see `"voices_loaded": 5` and the five keys below. Synaplan reaches the service via `SYNAPLAN_TTS_URL` (compose default: `http://host.docker.internal:10200`).
 
 Test speech synthesis:
 
@@ -57,21 +57,34 @@ Test speech synthesis:
 curl "http://127.0.0.1:10200/api/tts?text=Hello+world&language=en" -o test_en.wav
 curl "http://127.0.0.1:10200/api/tts?text=Hallo+Welt&language=de" -o test_de.wav
 curl "http://127.0.0.1:10200/api/tts?text=Hola+mundo&language=es" -o test_es.wav
+curl "http://127.0.0.1:10200/api/tts?text=Bonjour+le+monde&language=fr" -o test_fr.wav
 curl "http://127.0.0.1:10200/api/tts?text=Merhaba+dünya&language=tr" -o test_tr.wav
 ```
 
 ## Bundled voices
 
-These four are **inside the image**. They match Synaplan's UI locales (`en`, `de`, `es`, `tr`): the frontend language / detected reply language selects the voice automatically.
+These five are **inside the image**. They match Synaplan's UI locales (`en`, `de`, `es`, `fr`, `tr`): the frontend language / detected reply language selects the voice automatically.
 
 | Language | Voice key | Speaker | Quality |
 |----------|-----------|---------|---------|
 | English (US) | `en_US-lessac-medium` | lessac | medium |
-| German | `de_DE-thorsten-medium` | thorsten | medium |
+| German | `de_DE-kerstin-low` | kerstin | low |
 | Spanish | `es_ES-davefx-medium` | davefx | medium |
+| French | `fr_FR-siwis-medium` | siwis | medium |
 | Turkish | `tr_TR-dfki-medium` | dfki | medium |
 
-How Synaplan picks a voice: the chat UI sends its locale; if the backend detects another reply language, that wins. Piper then maps `en` / `de` / `es` / `tr` to the row above. An explicit `voice=` query still overrides everything.
+German is a female voice at `low` quality (16 kHz) because Piper publishes no
+medium-quality female German model — the only German voices above 16 kHz are the
+male Thorsten and the multi-speaker `de_DE-mls-medium`, which drifts badly on short
+prompts. To get the male Thorsten back, fetch him as an extra and request
+`voice=de_DE-thorsten-medium`:
+
+```bash
+./download-voices.sh de-male
+docker compose restart piper
+```
+
+How Synaplan picks a voice: the chat UI sends its locale; if the backend detects another reply language, that wins. Piper then maps `en` / `de` / `es` / `fr` / `tr` to the row above. An explicit `voice=` query still overrides everything.
 
 ## Adding more voices
 
@@ -80,14 +93,15 @@ How Synaplan picks a voice: the chat UI sends its locale; if the backend detects
 3. Restart: `docker compose restart piper`.
 4. `GET /api/voices` lists every loaded model. Call TTS with `voice=<key>` or `language=<xx>`.
 
-Helper for the catalog extras (Russian, Persian) or to re-fetch a bundled voice onto the host:
+Helper for the catalog extras (male German, Russian, Persian) or to re-fetch a bundled voice onto the host:
 
 ```bash
 ./download-voices.sh            # catalog (skips files that already exist)
 ./download-voices.sh ru fa      # only those languages
+./download-voices.sh de-male    # male German (de_DE-thorsten-medium)
 ```
 
-Do **not** mount `./voices` over `/voices` — that hides the four baked models.
+Do **not** mount `./voices` over `/voices` — that hides the five baked models.
 
 ## API Reference
 
@@ -98,8 +112,8 @@ Health check — returns loaded voice count and available voices.
 ```json
 {
   "status": "ok",
-  "voices_loaded": 4,
-  "available_voices": ["de_DE-thorsten-medium", "en_US-lessac-medium", "es_ES-davefx-medium", "tr_TR-dfki-medium"],
+  "voices_loaded": 5,
+  "available_voices": ["de_DE-kerstin-low", "en_US-lessac-medium", "es_ES-davefx-medium", "fr_FR-siwis-medium", "tr_TR-dfki-medium"],
   "default_voice": "en_US-lessac-medium"
 }
 ```
@@ -141,7 +155,7 @@ Synthesize speech. Returns `audio/wav`.
 |-------|------|----------|-------------|
 | `text` | string | ✅ | Text to synthesize (max 5000 chars) |
 | `voice` | string | – | Exact voice key (overrides language) |
-| `language` | string | – | Language shortcode: `en`, `de`, `es`, `tr`, plus any extra you added |
+| `language` | string | – | Language shortcode: `en`, `de`, `es`, `fr`, `tr`, plus any extra you added |
 | `length_scale` | float | – | Speed factor — <1.0 faster, >1.0 slower |
 | `volume` | float | – | Output volume multiplier (default 1.0) |
 | `speaker_id` | int | – | Speaker index for multi-speaker models |
@@ -187,7 +201,7 @@ Copy `.env.example` to `.env` on the server and set `TTS_BIND_ADDRESS` to your L
 ```
 synaplan-tts/
 ├── docker-compose.yml    # Service configuration
-├── Dockerfile            # Bakes 4 voices + TTS server
+├── Dockerfile            # Bakes 5 voices + TTS server
 ├── server.py             # FastAPI HTTP API
 ├── requirements.txt      # Python dependencies
 ├── download-voices.sh    # Optional extra-voice helper

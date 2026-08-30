@@ -1,7 +1,7 @@
 # Synaplan TTS
 #
-# Piper HTTP API. The published image already contains four voices
-# (English, German, Spanish, Turkish) — first start needs no download.
+# Piper HTTP API. The published image already contains five voices
+# (English, German, Spanish, French, Turkish) — first start needs no download.
 #
 #   Local dev  : docker compose up -d          (binds 127.0.0.1)
 #   GPU server : copy .env.example → .env, set TTS_BIND_ADDRESS
