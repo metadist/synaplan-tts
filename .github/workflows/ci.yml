@@ -11,13 +11,34 @@ env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
+# Collapse concurrent runs on the same ref so rapid-fire pushes don't trigger
+# N parallel multi-arch image builds. PR builds are scoped per-PR ref.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-push:
-    name: Build and Push Docker Image
-    runs-on: ubuntu-latest
+  # Each platform is built on a runner of its own architecture — no QEMU.
+  # Native builds are faster and the PR smoke test below then executes each
+  # image for real (the ARM runner actually runs the ARM image).
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: read
       packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            arch: amd64
+            runner: ubuntu-latest
+          # No arm64 larger runner exists in the org; the standard GitHub
+          # arm64 runner is free and unlimited for public repositories.
+          - platform: linux/arm64
+            arch: arm64
+            runner: ubuntu-24.04-arm
 
     steps:
       - name: Checkout repository
@@ -34,6 +55,102 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Tags are applied to the manifest list in the merge job, so only the
+      # per-platform labels/annotations are needed here.
+      - name: Extract metadata (labels, annotations)
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # Pushed by digest without a tag: the merge job assembles the digests of
+      # all platforms into the tagged manifest list. On pull requests nothing
+      # is pushed — the image is loaded locally for the smoke test below.
+      - name: Build and push by digest
+        id: build
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          # Provenance would add an extra manifest per platform that
+          # `imagetools create` does not carry over into the manifest list.
+          provenance: false
+          # Per-arch cache scopes: a shared scope makes the two jobs evict
+          # each other's layers.
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+
+      - name: Build for PR smoke test
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          load: true
+          tags: synaplan-tts:pr-${{ matrix.arch }}
+          cache-from: type=gha,scope=${{ matrix.arch }}
+
+      - name: Image ships at least five baked voices
+        if: github.event_name == 'pull_request'
+        run: |
+          COUNT=$(docker run --rm --entrypoint sh "synaplan-tts:pr-${ARCH}" -c 'ls /voices/*.onnx 2>/dev/null | wc -l')
+          echo "Baked .onnx count on ${ARCH}: $COUNT"
+          docker run --rm --entrypoint sh "synaplan-tts:pr-${ARCH}" -c \
+            'for v in en_US-lessac-medium de_DE-kerstin-low es_ES-davefx-medium fr_FR-siwis-medium tr_TR-dfki-medium; do
+               test -s /voices/$v.onnx && test -s /voices/$v.onnx.json
+             done'
+          test "$COUNT" -ge 5
+        env:
+          ARCH: ${{ matrix.arch }}
+
+      - name: Export digest
+        if: github.event_name != 'pull_request'
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  merge:
+    name: Create Multi-Arch Manifest
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v6
@@ -43,30 +160,38 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=ref,event=pr
 
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          # Load locally so the voice-count smoke test can inspect the image
-          # on pull requests (push is skipped for PRs).
-          load: ${{ github.event_name == 'pull_request' }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Image ships at least five baked voices
-        if: github.event_name == 'pull_request'
+      - name: Create manifest list and push
+        working-directory: /tmp/digests
         run: |
-          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | awk 'NF{print; exit}')
-          test -n "$IMAGE"
-          COUNT=$(docker run --rm --entrypoint sh "$IMAGE" -c 'ls /voices/*.onnx 2>/dev/null | wc -l')
-          echo "Baked .onnx count: $COUNT"
-          docker run --rm --entrypoint sh "$IMAGE" -c \
-            'for v in en_US-lessac-medium de_DE-kerstin-low es_ES-davefx-medium fr_FR-siwis-medium tr_TR-dfki-medium; do
-               test -s /voices/$v.onnx && test -s /voices/$v.onnx.json
-             done'
-          test "$COUNT" -ge 5
+          # shellcheck disable=SC2046 # word splitting builds the -t / digest argument lists
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${REGISTRY}/${IMAGE_NAME}@sha256:%s " *)
+
+      - name: Verify manifest exposes both platforms
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          set -euo pipefail
+          expected='["linux/amd64","linux/arm64"]'
+          while IFS= read -r image; do
+            [ -n "$image" ] || continue
+            platforms="$(
+              docker buildx imagetools inspect --raw "$image" |
+                jq -c '[.manifests[].platform
+                  | select(.os == "linux" and (.architecture == "amd64" or .architecture == "arm64"))
+                  | "\(.os)/\(.architecture)"] | unique | sort'
+            )"
+            if [ "$platforms" != "$expected" ]; then
+              echo "::error::${image} exposes ${platforms}, expected ${expected}"
+              exit 1
+            fi
+            echo "${image} exposes ${platforms}"
+          done <<< "$IMAGE_TAGS"
+
+      - name: Inspect manifest list
+        run: |
+          docker buildx imagetools inspect "${REGISTRY}/${IMAGE_NAME}:${VERSION}" | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
