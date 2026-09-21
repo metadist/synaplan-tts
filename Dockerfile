@@ -1,3 +1,13 @@
+# Synaplan TTS — multi-arch image (linux/amd64 + linux/arm64).
+#
+# Both stages build from multi-arch base images (alpine, python:slim) and the
+# Python dependencies (piper-tts, onnxruntime, fastapi, uvicorn) all ship
+# linux/aarch64 wheels, so this Dockerfile needs no arch-specific branches.
+# CI builds each platform natively (amd64 + ARM runners, no QEMU) and merges
+# them into one manifest list — Docker then pulls the matching arch
+# automatically, so Apple Silicon Macs run the ARM image with no extra config.
+# Keep both FROM images multi-arch; never pin a per-arch digest here.
+#
 # ── Stage 1: bake the five product voices into the image ──────────────
 # English, German, Spanish, French, Turkish. Extra languages are mounted
 # at runtime via EXTRA_VOICES_DIR (see README).

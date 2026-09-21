@@ -9,6 +9,10 @@ Self-hosted multi-language text-to-speech service powered by [Piper](https://git
 
 The published image **ships five voices** (English, German, Spanish, French, Turkish). No first-run download, no HuggingFace dependency at startup. Drop extra `.onnx` models into `./voices/` if you need more languages.
 
+## Platforms
+
+The image is **multi-arch**: `linux/amd64` + `linux/arm64` under one tag. Docker pulls the arch that matches the host automatically — Apple Silicon Macs run the native ARM image (no Rosetta, no extra config), Intel/AMD machines get `amd64`. Every command below works unchanged on both.
+
 ## Why a separate service?
 
 TTS is optional, CPU-heavy, and language-pack heavy. Keeping it in its own image means:

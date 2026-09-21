@@ -11,8 +11,12 @@
 #   curl http://${TTS_BIND_ADDRESS:-127.0.0.1}:10200/health
 #   curl "http://${TTS_BIND_ADDRESS:-127.0.0.1}:10200/api/tts?text=Hello&language=en" -o test.wav
 #
-# Image: ghcr.io/metadist/synaplan-tts:latest
+# Image: ghcr.io/metadist/synaplan-tts:latest (multi-arch: linux/amd64 + linux/arm64)
 # Source: https://github.com/metadist/synaplan-tts
+#
+# No `platform:` pin on purpose: the registry serves a manifest list and Docker
+# pulls the arch that matches the host — Apple Silicon Macs get the native ARM
+# image automatically, Intel/AMD hosts get amd64.
 
 services:
   piper:
