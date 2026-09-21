@@ -241,6 +241,10 @@ synaplan-tts/
    - Bind to LAN IP only (never `0.0.0.0`)
    - Firewall: allow only Synaplan nodes to port `10200/tcp`
 
+6. Enable automatic updates (optional but recommended):
+   - Use [`docker-compose.prod.yml`](docker-compose.prod.yml) (image-only, no local build) as the server's `docker-compose.yml`.
+   - Install the watchguard timer so new GHCR images roll out within ~2 minutes. See [`deploy/README.md`](deploy/README.md).
+
 ## Related
 
 - [Main app — synaplan](https://github.com/metadist/synaplan)

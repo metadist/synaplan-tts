@@ -1,0 +1,33 @@
+# Synaplan TTS — production
+#
+# Image-only deployment (no local build). Pulls the published multi-voice image
+# so a fresh server is deterministic and never depends on the local source tree.
+# Voices en/de/es/fr/tr are baked into the image; drop extra .onnx + .onnx.json
+# into ./voices/ to add more (mounted read-only at /voices-extra).
+#
+# On the server this file is used as docker-compose.yml (see deploy/README.md):
+#   cp .env.example .env         # set TTS_BIND_ADDRESS to the LAN IP
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# Updates are installed automatically by synaplan-tts-watchguard.timer, which
+# polls GHCR every 2 minutes and recreates the stack when the digest changes.
+#
+# Image:  ghcr.io/metadist/synaplan-tts:latest
+# Source: https://github.com/metadist/synaplan-tts
+
+services:
+  piper:
+    image: ghcr.io/metadist/synaplan-tts:latest
+    container_name: synaplan-piper-tts
+    restart: unless-stopped
+    ports:
+      - "${TTS_BIND_ADDRESS:-127.0.0.1}:10200:10200"
+    volumes:
+      # Host extras only — do not mount over /voices (that hides the baked set).
+      - ./voices:/voices-extra:ro
+    environment:
+      VOICES_DIR: /voices
+      EXTRA_VOICES_DIR: /voices-extra
+      DEFAULT_VOICE: en_US-lessac-medium
+      MAX_TEXT_LENGTH: "5000"
+      SYNTH_WORKERS: "4"

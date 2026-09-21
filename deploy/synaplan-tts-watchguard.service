@@ -1,0 +1,16 @@
+[Unit]
+Description=Synaplan TTS watchguard (pulls ghcr image, re-up compose if changed)
+Documentation=https://github.com/metadist/synaplan-tts
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/synaplan-tts-watchguard.sh
+# Bound long-running deploys so the timer does not accumulate failed runs.
+TimeoutStartSec=300
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

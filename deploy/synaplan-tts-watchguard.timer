@@ -1,0 +1,16 @@
+[Unit]
+Description=Run Synaplan TTS watchguard every 2 minutes
+Documentation=https://github.com/metadist/synaplan-tts
+
+[Timer]
+# 60s after boot to give docker/network a chance to settle, then poll every
+# 2 minutes. Adjust OnUnitActiveSec if GHCR rate-limits or you want to slow
+# the loop down.
+OnBootSec=60
+OnUnitActiveSec=2min
+Unit=synaplan-tts-watchguard.service
+AccuracySec=15s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
