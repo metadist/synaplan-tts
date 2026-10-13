@@ -40,7 +40,7 @@ RUN set -eu; \
     echo "Baked voices:"; ls -lh *.onnx
 
 # ── Stage 2: TTS HTTP API ─────────────────────────────────────────────
-FROM python:3.14-slim-bookworm
+FROM python:3.15-slim-bookworm
 
 LABEL maintainer="Synaplan"
 LABEL description="Synaplan TTS — Piper-based multi-language text-to-speech HTTP API (5 baked voices: en, de, es, fr, tr)"
