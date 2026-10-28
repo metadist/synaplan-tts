@@ -11,7 +11,7 @@
 # ── Stage 1: bake the five product voices into the image ──────────────
 # English, German, Spanish, French, Turkish. Extra languages are mounted
 # at runtime via EXTRA_VOICES_DIR (see README).
-FROM alpine:3.24 AS voices
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS voices
 
 RUN apk add --no-cache curl ca-certificates
 
@@ -40,7 +40,7 @@ RUN set -eu; \
     echo "Baked voices:"; ls -lh *.onnx
 
 # ── Stage 2: TTS HTTP API ─────────────────────────────────────────────
-FROM python:3.14-slim-bookworm
+FROM python:3.14-slim-bookworm@sha256:516b51cb9db2ef061e465c803e50f64361b82cefd91e525b889b967b83e83527
 
 LABEL maintainer="Synaplan"
 LABEL description="Synaplan TTS — Piper-based multi-language text-to-speech HTTP API (5 baked voices: en, de, es, fr, tr)"
@@ -48,7 +48,9 @@ LABEL org.opencontainers.image.source="https://github.com/metadist/synaplan-tts"
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends curl ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && \
+    sed -i 's|^mozilla/emSign_|!mozilla/emSign_|' /etc/ca-certificates.conf && \
+    update-ca-certificates
 
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
