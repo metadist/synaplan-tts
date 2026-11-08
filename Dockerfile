@@ -11,7 +11,7 @@
 # ── Stage 1: bake the five product voices into the image ──────────────
 # English, German, Spanish, French, Turkish. Extra languages are mounted
 # at runtime via EXTRA_VOICES_DIR (see README).
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS voices
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS voices
 
 RUN apk add --no-cache curl ca-certificates
 
